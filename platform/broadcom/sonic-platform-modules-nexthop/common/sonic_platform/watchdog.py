@@ -16,6 +16,10 @@ _logger = syslogger.SysLogger(_SYSLOG_IDENTIFIER)
 _WATCHDOG_PAUSE_FILE_PATH = Path("/var/lock/pddf-locks/watchdog.pause")
 # How long the watchdog is armed for by the watchdog.timer
 _WATCHDOG_PUNCH_DAEMON_ARM_SECONDS = 300
+# Used when pddf-device.json declares no explicit power-cycle control bit
+_DEFAULT_EVENT_DRIVEN_POWER_CYCLE_CONTROL_BIT = 4
+# Used when pddf-device.json declares no use_watchdog_msi block
+_DEFAULT_WATCHDOG_COUNTER_MSI_REG = 0x1D8
 
 
 def _pause_watchdog_punching(duration: datetime.timedelta) -> None:
@@ -49,6 +53,10 @@ class Watchdog(WatchdogBase):
         fpga_pci_addr: str,
         event_driven_power_cycle_control_reg_offset: int,
         watchdog_counter_reg_offset: int,
+        event_driven_power_cycle_control_bit: int = (
+            _DEFAULT_EVENT_DRIVEN_POWER_CYCLE_CONTROL_BIT
+        ),
+        watchdog_counter_msi_reg: int = _DEFAULT_WATCHDOG_COUNTER_MSI_REG,
     ):
         """
         Initialize the Watchdog class
@@ -59,6 +67,10 @@ class Watchdog(WatchdogBase):
             event_driven_power_cycle_control_reg_offset
         )
         self.watchdog_counter_reg_offset: int = watchdog_counter_reg_offset
+        self.event_driven_power_cycle_control_bit: int = (
+            event_driven_power_cycle_control_bit
+        )
+        self.watchdog_counter_msi_reg: int = watchdog_counter_msi_reg
 
     def _read_watchdog_counter_register(self) -> int:
         """Returns the value of the watchdog counter register."""
@@ -106,8 +118,9 @@ class Watchdog(WatchdogBase):
             pci_address=self.fpga_pci_addr,
             offset=self.event_driven_power_cycle_control_reg_offset,
         )
+        bit = self.event_driven_power_cycle_control_bit
         new_reg_val = fpga_lib.overwrite_field(
-            reg_val=reg_val, bit_range=(4, 4), field_val=int(enable)
+            reg_val=reg_val, bit_range=(bit, bit), field_val=int(enable)
         )
         fpga_lib.write_32(
             pci_address=self.fpga_pci_addr,
@@ -129,7 +142,7 @@ class Watchdog(WatchdogBase):
             # TODO: workaround: arm watchdog 2 to trigger watchdog 1
             fpga_lib.write_32(
                 pci_address=self.fpga_pci_addr,
-                offset=0x1d8,
+                offset=self.watchdog_counter_msi_reg,
                 val=0x80000001,
             )
         except Exception as e:

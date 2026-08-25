@@ -28,5 +28,6 @@ fi
 # require the ASIC to be out of reset.
 nh_gen pddf_device_json
 nh_gen pcie_yaml
+nh_gen pd_plugin_json
 
 exit 0
