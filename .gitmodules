@@ -4,7 +4,7 @@
 	branch = 202511
 [submodule "sonic-linux-kernel"]
 	path = src/sonic-linux-kernel
-	url = https://github.com/Azure/sonic-linux-kernel.msft
+	url = ../sonic-linux-kernel.msft
 	branch = 202512
 [submodule "sonic-sairedis"]
 	path = src/sonic-sairedis
@@ -37,7 +37,7 @@
 	url = https://github.com/p4lang/ptf.git
 [submodule "src/sonic-utilities"]
 	path = src/sonic-utilities
-	url = https://github.com/Azure/sonic-utilities.msft
+	url = ../sonic-utilities.msft
 	branch = 202512
 [submodule "platform/broadcom/sonic-platform-modules-arista"]
 	path = platform/broadcom/sonic-platform-modules-arista
