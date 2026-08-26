@@ -3,7 +3,8 @@
 	url = https://github.com/sonic-net/sonic-swss-common
 [submodule "sonic-linux-kernel"]
 	path = src/sonic-linux-kernel
-	url = https://github.com/Azure/sonic-linux-kernel.msft
+	url = https://github.com/nexthop-ai/sonic-linux-kernel.msft
+	branch = community-202608-EFT1
 [submodule "sonic-sairedis"]
 	path = src/sonic-sairedis
 	url = https://github.com/sonic-net/sonic-sairedis
