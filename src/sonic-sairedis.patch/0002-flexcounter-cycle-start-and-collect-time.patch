@@ -1,0 +1,99 @@
+Subject: [flexcounter] hand the poll cycle start and collection time to plugins
+
+Backport of nexthop-ai/private-sonic-sairedis#340 (NOS-15253), ported to this
+tree: the upstream 202511 FlexCounter.cpp has diverged from the fork the PR was
+authored against, so the hunks were re-derived against the pinned source. The
+code change is identical.
+
+A plugin that wants the real poll cadence can only stamp its own clock, and it
+runs inside runPlugins() -- after collectCounters(). Consecutive stamps therefore
+differ by the cycle period plus the change in collection time, so stat-collection
+jitter is indistinguishable from poll jitter.
+
+Adds two optional, positional plugin arguments:
+  ARGV[4] - monotonic cycle start, captured before collectCounters()
+  ARGV[5] - stat collection time for this cycle
+
+Both are additive; existing plugins read no further than ARGV[3] and are
+unaffected. Poll scheduling behaviour is unchanged -- the sleep correction is
+still computed from start to finish exactly as before.
+
+Upstream: https://github.com/nexthop-ai/private-sonic-sairedis/pull/340
+
+--- a/syncd/FlexCounter.cpp
++++ b/syncd/FlexCounter.cpp
+@@ -3482,15 +3482,30 @@
+ }
+ 
+ void FlexCounter::runPlugins(
+-        _In_ swss::DBConnector& counters_db)
++        _In_ swss::DBConnector& counters_db,
++        _In_ int64_t cycleStartUs,
++        _In_ int64_t collectUs)
+ {
+     SWSS_LOG_ENTER();
+ 
++    // ARGV[4] is the monotonic start of this poll cycle, captured before
++    // collectCounters().  A plugin can only stamp its own clock when it is
++    // invoked, which is after stat collection, so consecutive stamps differ by
++    // the cycle period plus the change in collection time.  That makes
++    // collection jitter indistinguishable from poll jitter, and lets a
++    // measured interval come out shorter than the configured one.
++    //
++    // ARGV[5] is how long stat collection took for this cycle.  It is the term
++    // that scales with the number of polled objects, so it is what decides
++    // whether a given poll interval is sustainable at a given scale; without
++    // it a plugin can see that the cycle overran but not why.
+     const std::vector<std::string> argv =
+     {
+         std::to_string(counters_db.getDbId()),
+         COUNTERS_TABLE,
+-        std::to_string(m_pollInterval)
++        std::to_string(m_pollInterval),
++        std::to_string(cycleStartUs),
++        std::to_string(collectUs)
+     };
+ 
+     for (const auto &it : m_counterContext)
+@@ -3514,11 +3529,19 @@
+         if (m_enable && !allIdsEmpty() && (m_pollInterval > 0))
+         {
+             auto start = std::chrono::steady_clock::now();
++
++            auto cycleStartUs = std::chrono::duration_cast<std::chrono::microseconds>(
++                    start.time_since_epoch()).count();
+ 
+             collectCounters(countersTable);
+ 
+-            runPlugins(db);
++            auto afterCollect = std::chrono::steady_clock::now();
+ 
++            auto collectUs = std::chrono::duration_cast<std::chrono::microseconds>(
++                    afterCollect - start).count();
++
++            runPlugins(db, cycleStartUs, collectUs);
++
+             auto finish = std::chrono::steady_clock::now();
+ 
+             uint32_t delay = static_cast<uint32_t>(
+--- a/syncd/FlexCounter.h
++++ b/syncd/FlexCounter.h
+@@ -14,6 +14,7 @@
+ #include <unordered_map>
+ #include <memory>
+ #include <type_traits>
++#include <cstdint>
+ 
+ // Placeholder type for attributes not requiring data allocation
+ // Used as default template parameter for simple attributes
+@@ -176,7 +177,9 @@
+                     _In_ swss::Table &countersTable);
+ 
+             void runPlugins(
+-                    _In_ swss::DBConnector& db);
++                    _In_ swss::DBConnector& db,
++                    _In_ int64_t cycleStartUs,
++                    _In_ int64_t collectUs);
+ 
+             void startFlexCounterThread();
+ 
