@@ -1,0 +1,123 @@
+[pfcwd] bind every storming port to the shared ingress drop table
+
+The ingress drop rule names its ports in IN_PORTS, but IN_PORTS is a match
+field, not a bind point: an ACL table is only evaluated for traffic arriving on
+a port it is bound to. createPfcAclTable() links just the port that creates the
+table, and every later storming port takes the "table already exists" path,
+which binds nothing. So the ingress half of the drop action was inert for all
+but the first port.
+
+Observed on a 26-port Sea Eagle with 25 ports storming: both ingress rules
+(TC 3 and TC 4) carried all 25 ports in IN_PORTS, while the table holding them
+had exactly 1 port bound, against 25 for each of the two egress tables.
+
+Bind each storming port to the table as it arrives. The bind is skipped when
+the port is already bound, so a re-storm cannot leak a table group member, and
+skipped entirely for a pre-existing IngressTableDrop that PFCWD only borrowed -
+that table belongs to whoever created it, and its bindings are not ours to
+change.
+
+Upstream-status: not submitted
+diff --git a/orchagent/pfcactionhandler.cpp b/orchagent/pfcactionhandler.cpp
+index c6ce2dac..f248484f 100644
+--- a/orchagent/pfcactionhandler.cpp
++++ b/orchagent/pfcactionhandler.cpp
+@@ -342,6 +342,10 @@ PfcWdAclHandler::PfcWdAclHandler(sai_object_id_t port, sai_object_id_t queue,
+         }
+     }
+ 
++    // The table is bound to the port that created it; every other storming
++    // port needs binding too, or its ingress drop is never evaluated.
++    bindIngressPort(m_strIngressTable, port);
++
+     // Egress table/rule creation
+     table_type = TABLE_TYPE_PFCWD;
+ 
+@@ -431,6 +435,7 @@ void PfcWdAclHandler::clear()
+ 
+     // The tables are going away, so any queued IN_PORTS edit is moot.
+     m_pendingInPorts.clear();
++    m_ownedAclTables.clear();
+ 
+     for (auto& tablepair: m_aclTables)
+     {
+@@ -460,6 +465,8 @@ void PfcWdAclHandler::createPfcAclTable(sai_object_id_t port, string strTable, b
+         return;
+     }
+ 
++    m_ownedAclTables.insert(strTable);
++
+     // Link port only for ingress ACL table or unshared egress ACL table.
+     if (ingress || !shared_egress_acl_table)
+     {
+@@ -532,6 +539,42 @@ std::string PfcWdAclHandler::ingressRuleName(uint8_t queueId)
+     return "Rule_PfcWdAclHandler_" + std::to_string(queueId);
+ }
+ 
++void PfcWdAclHandler::bindIngressPort(const std::string &strTable, sai_object_id_t port)
++{
++    SWSS_LOG_ENTER();
++
++    // Never touch a table PFCWD only borrowed; its owner manages its bindings.
++    if (m_ownedAclTables.find(strTable) == m_ownedAclTables.end())
++    {
++        return;
++    }
++
++    auto found = m_aclTables.find(strTable);
++    if (found == m_aclTables.end())
++    {
++        return;
++    }
++
++    AclTable &table = found->second;
++    auto it = table.ports.find(port);
++    if (it != table.ports.end() && it->second != SAI_NULL_OBJECT_ID)
++    {
++        // Already bound; binding again would leak the previous group member.
++        return;
++    }
++
++    if (it == table.ports.end())
++    {
++        table.link(port);
++    }
++
++    if (!table.bind(port))
++    {
++        SWSS_LOG_ERROR("Failed to bind port oid:0x%" PRIx64 " to PFCWD ingress ACL table %s",
++                       port, strTable.c_str());
++    }
++}
++
+ void PfcWdAclHandler::deferIngressPort(uint8_t queueId, sai_object_id_t port, bool add)
+ {
+     SWSS_LOG_ENTER();
+@@ -611,6 +654,7 @@ void PfcWdAclHandler::flush(void)
+ }
+ 
+ std::map<std::string, AclTable> PfcWdAclHandler::m_aclTables;
++std::set<std::string> PfcWdAclHandler::m_ownedAclTables;
+ std::map<uint8_t, std::map<sai_object_id_t, PfcWdAclHandler::PendingPortOp>> PfcWdAclHandler::m_pendingInPorts;
+ 
+ PfcWdLossyHandler::PfcWdLossyHandler(sai_object_id_t port, sai_object_id_t queue,
+diff --git a/orchagent/pfcactionhandler.h b/orchagent/pfcactionhandler.h
+index 153680e6..a4b4693c 100644
+--- a/orchagent/pfcactionhandler.h
++++ b/orchagent/pfcactionhandler.h
+@@ -136,6 +136,15 @@ class PfcWdAclHandler: public PfcWdLossyHandler
+         // intermediate state.
+         static std::map<uint8_t, std::map<sai_object_id_t, PendingPortOp>> m_pendingInPorts;
+ 
++        // Tables PFCWD created itself, and may therefore bind further ports to.
++        // A reused pre-existing IngressTableDrop belongs to whoever created it.
++        static std::set<std::string> m_ownedAclTables;
++
++        // Attach a port to the shared ingress table. The rule names its ports in
++        // IN_PORTS, but IN_PORTS is a match field, not a bind point: a table
++        // bound to one port is only ever evaluated for that port's traffic.
++        static void bindIngressPort(const std::string &strTable, sai_object_id_t port);
++
+         static std::string ingressRuleName(uint8_t queueId);
+         static void deferIngressPort(uint8_t queueId, sai_object_id_t port, bool add);
+ 
