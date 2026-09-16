@@ -1,0 +1,586 @@
+[pfcwd] batch ingress IN_PORTS updates across a storm event batch
+
+SAI has no incremental in-ports update: every write replaces an ACL rule's
+whole port list. The drop action added one port per storm, so N ports storming
+the same lossless queue cost N(N+1) port-OID writes across the two shared
+ingress rules, all of it inside the SAI mutex. Measured on a 26-port Sea Eagle
+the count matched N(N+1) exactly at every point: 6, 30, 110, 240, 420 and 650
+writes for 2, 5, 10, 15, 20 and 25 ports.
+
+Drain the watchdog notification queue with pops() so a congestion event that
+moves many queues is handled as one batch, and have the ACL handler record its
+intended in-ports changes instead of programming each one. A flush at the end
+of the batch computes each rule's final port set and writes it once, turning
+the cost into O(N). Last write wins per port, so a queue that storms and
+restores inside one batch nets out correctly, and a rule left with no ports is
+removed rather than written empty - an empty IN_PORTS list means "field
+disabled", which would make a drop rule match every port.
+
+AclRule::setInPorts() sets the list straight from an OID vector, so the alias
+string that the old path built and reparsed on every single-port change is gone
+too.
+
+The flush also runs wherever handlers are created or destroyed in bulk:
+big-red-switch enable/disable, the warm-restart replay, and port
+unregistration. The rule lookup that the destructor used to do (and throw on)
+moves into the flush, which is where the choice between dropping one port and
+removing the rule can be made for the whole batch.
+
+Upstream-status: not submitted
+diff --git a/orchagent/aclorch.cpp b/orchagent/aclorch.cpp
+index 092a827d..ee23f77b 100755
+--- a/orchagent/aclorch.cpp
++++ b/orchagent/aclorch.cpp
+@@ -1730,6 +1730,33 @@ vector<sai_object_id_t> AclRule::getInPorts() const
+     return inPorts;
+ }
+ 
++bool AclRule::setInPorts(const vector<sai_object_id_t>& ports)
++{
++    SWSS_LOG_ENTER();
++
++    // An IN_PORTS field with an empty list is not "match nothing", it is "field
++    // disabled", which in SAI means the rule matches on every port. For a drop
++    // rule that is the difference between mitigating one port and black-holing
++    // the switch, so refuse it and let the caller remove the rule instead.
++    if (ports.empty())
++    {
++        SWSS_LOG_ERROR("Refusing to set an empty IN_PORTS list on ACL rule %s", m_id.c_str());
++        return false;
++    }
++
++    sai_acl_field_data_t matchData{};
++    matchData.enable = true;
++
++    // setMatch() stores the attribute in a SaiAttrWrapper, which serializes and
++    // deserializes it to deep-copy the object list, so pointing at this local
++    // vector is safe.
++    vector<sai_object_id_t> inPorts(ports);
++    matchData.data.objlist.count = static_cast<uint32_t>(inPorts.size());
++    matchData.data.objlist.list = inPorts.data();
++
++    return setMatch(SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS, matchData);
++}
++
+ string AclRule::getId() const
+ {
+     return m_id;
+@@ -5010,68 +5037,113 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, string attr_name, v
+ {
+     SWSS_LOG_ENTER();
+ 
+-    sai_object_id_t table_oid = getTableById(table_id);
+-    string attr_value;
++    switch (aclMatchLookup[attr_name])
++    {
++        case SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS:
++        {
++            sai_object_id_t port_oid = *(sai_object_id_t *)data;
++            vector<sai_object_id_t> one { port_oid };
++            vector<sai_object_id_t> none;
++
++            return oper == RULE_OPER_ADD
++                ? updateAclRuleInPorts(table_id, rule_id, one, none)
++                : updateAclRuleInPorts(table_id, rule_id, none, one);
++        }
++
++        default:
++            SWSS_LOG_ERROR("Acl rule update not supported for attr name %s", attr_name.c_str());
++            break;
++    }
++
++    return true;
++}
++
++bool AclOrch::updateAclRuleInPorts(const string &table_id, const string &rule_id,
++                                   const vector<sai_object_id_t> &portsToAdd,
++                                   const vector<sai_object_id_t> &portsToRemove)
++{
++    SWSS_LOG_ENTER();
+ 
++    sai_object_id_t table_oid = getTableById(table_id);
+     if (table_oid == SAI_NULL_OBJECT_ID)
+     {
+         SWSS_LOG_ERROR("Failed to update ACL rule in ACL table %s. Table doesn't exist", table_id.c_str());
+         return false;
+     }
+ 
+-    auto rule_it = m_AclTables[table_oid].rules.find(rule_id);
+-    if (rule_it == m_AclTables[table_oid].rules.end())
++    auto tableIt = m_AclTables.find(table_oid);
++    if (tableIt == m_AclTables.end())
+     {
+-        SWSS_LOG_ERROR("Failed to update ACL rule in ACL table %s. Rule doesn't exist", rule_id.c_str());
++        SWSS_LOG_ERROR("Failed to update ACL rule in ACL table %s. Table is not cached", table_id.c_str());
+         return false;
+     }
+ 
+-    switch (aclMatchLookup[attr_name])
++    auto rule_it = tableIt->second.rules.find(rule_id);
++    if (rule_it == tableIt->second.rules.end())
+     {
+-        case SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS:
+-        {
+-            sai_object_id_t port_oid = *(sai_object_id_t *)data;
+-            vector<sai_object_id_t> in_ports = rule_it->second->getInPorts();
++        SWSS_LOG_ERROR("Failed to update ACL rule in ACL table %s. Rule %s doesn't exist",
++                       table_id.c_str(), rule_id.c_str());
++        return false;
++    }
+ 
+-            if (oper == RULE_OPER_ADD)
+-            {
+-                in_ports.push_back(port_oid);
+-            }
+-            else
+-            {
+-                for (auto port_iter = in_ports.begin(); port_iter != in_ports.end(); port_iter++)
+-                {
+-                    if (*port_iter == port_oid)
+-                    {
+-                        in_ports.erase(port_iter);
+-                        break;
+-                    }
+-                }
+-            }
++    auto current = rule_it->second->getInPorts();
+ 
+-            for (const auto& port_iter: in_ports)
+-            {
+-                Port p;
+-                gPortsOrch->getPort(port_iter, p);
+-                attr_value += p.m_alias;
+-                attr_value += ',';
+-            }
++    // Ordered set so the programmed list is stable across calls.
++    const set<sai_object_id_t> currentPorts(current.begin(), current.end());
++    set<sai_object_id_t> inPorts(currentPorts);
+ 
+-            if (!attr_value.empty())
+-            {
+-                attr_value.pop_back();
+-            }
++    for (auto port_oid : portsToAdd)
++    {
++        // Validate only the ports actually being added. Rebuilding and
++        // re-validating the whole alias list on every single-port change is
++        // what made a multi-port storm quadratic.
++        Port p;
++        if (!gPortsOrch->getPort(port_oid, p))
++        {
++            SWSS_LOG_ERROR("Failed to locate port oid:%" PRIx64 " for ACL rule %s", port_oid, rule_id.c_str());
++            return false;
++        }
+ 
+-            rule_it->second->validateAddMatch(MATCH_IN_PORTS, attr_value);
+-            rule_it->second->updateInPorts();
++        if (p.m_type != Port::PHY)
++        {
++            SWSS_LOG_ERROR("Cannot bind rule %s to %s: IN_PORTS can only match physical interfaces",
++                           rule_id.c_str(), p.m_alias.c_str());
++            return false;
+         }
+-        break;
+ 
+-        default:
+-            SWSS_LOG_ERROR("Acl rule update not supported for attr name %s", attr_name.c_str());
+-        break;
++        inPorts.insert(port_oid);
++    }
++
++    for (auto port_oid : portsToRemove)
++    {
++        inPorts.erase(port_oid);
+     }
+ 
++    if (inPorts == currentPorts)
++    {
++        SWSS_LOG_INFO("ACL rule %s IN_PORTS unchanged, skipping update", rule_id.c_str());
++        return true;
++    }
++
++    if (inPorts.empty())
++    {
++        SWSS_LOG_ERROR("ACL rule %s would be left with no IN_PORTS; remove the rule instead",
++                       rule_id.c_str());
++        return false;
++    }
++
++    vector<sai_object_id_t> newPorts(inPorts.begin(), inPorts.end());
++    if (!rule_it->second->setInPorts(newPorts))
++    {
++        SWSS_LOG_ERROR("Failed to set IN_PORTS on ACL rule %s", rule_id.c_str());
++        return false;
++    }
++
++    rule_it->second->updateInPorts();
++
++    SWSS_LOG_INFO("Updated IN_PORTS on ACL rule %s: +%zu -%zu, now %zu ports",
++                  rule_id.c_str(), portsToAdd.size(), portsToRemove.size(), newPorts.size());
++
+     return true;
+ }
+ 
+diff --git a/orchagent/aclorch.h b/orchagent/aclorch.h
+index 32dc172e..1dafd50d 100755
+--- a/orchagent/aclorch.h
++++ b/orchagent/aclorch.h
+@@ -336,6 +336,11 @@ public:
+     sai_object_id_t getCounterOid() const;
+     bool hasCounter() const;
+     vector<sai_object_id_t> getInPorts() const;
++    // Replace the IN_PORTS match with an explicit OID list. Unlike
++    // validateAddMatch(MATCH_IN_PORTS, "<alias>,<alias>,...") this builds no
++    // string and looks up no aliases, so a caller that already knows the port
++    // set does not pay for the ports already in the rule.
++    bool setInPorts(const vector<sai_object_id_t>& ports);
+     bool getCreateCounter() const;
+ 
+     const vector<AclRangeConfig>& getRangeConfig() const;
+@@ -602,6 +607,13 @@ public:
+     bool removeAclRule(string table_id, string rule_id);
+     bool updateAclRule(shared_ptr<AclRule> updatedAclRule);
+     bool updateAclRule(string table_id, string rule_id, string attr_name, void *data, bool oper);
++    // Batched IN_PORTS update: apply every add and remove in one pass and push
++    // the result with a single set_acl_entry_attribute. SAI has no incremental
++    // in-ports update, so applying N changes one at a time costs O(N^2) port
++    // writes.
++    bool updateAclRuleInPorts(const string &table_id, const string &rule_id,
++                              const vector<sai_object_id_t> &portsToAdd,
++                              const vector<sai_object_id_t> &portsToRemove);
+     bool updateAclRule(string table_id, string rule_id, bool enableCounter);
+     AclRule* getAclRule(string table_id, string rule_id);
+ 
+diff --git a/orchagent/pfcactionhandler.cpp b/orchagent/pfcactionhandler.cpp
+index 32f984ce..c6ce2dac 100644
+--- a/orchagent/pfcactionhandler.cpp
++++ b/orchagent/pfcactionhandler.cpp
+@@ -338,7 +338,7 @@ PfcWdAclHandler::PfcWdAclHandler(sai_object_id_t port, sai_object_id_t queue,
+         } 
+         else 
+         {
+-            gAclOrch->updateAclRule(m_strIngressTable, m_strRule, MATCH_IN_PORTS, &port, RULE_OPER_ADD);
++            deferIngressPort(queueId, port, true);
+         }
+     }
+ 
+@@ -403,27 +403,15 @@ PfcWdAclHandler::~PfcWdAclHandler(void)
+ {
+     SWSS_LOG_ENTER();
+ 
+-    AclRule* rule = gAclOrch->getAclRule(m_strIngressTable, m_strRule);
+-    if (rule == nullptr)
+-    {
+-        SWSS_LOG_THROW("ACL Rule does not exist for rule %s", m_strRule.c_str());
+-    }
+-
+-    vector<sai_object_id_t> port_set = rule->getInPorts();
+     sai_object_id_t port = getPort();
+ 
+-    if ((port_set.size() == 1) && (port_set[0] == port))
+-    {
+-        gAclOrch->removeAclRule(m_strIngressTable, m_strRule);
+-    }
+-    else 
+-    {
+-        gAclOrch->updateAclRule(m_strIngressTable, m_strRule, MATCH_IN_PORTS, &port, RULE_OPER_DELETE);
+-    } 
++    // Queue the ingress removal. If the matching add has not been flushed yet
++    // this simply overwrites it and the ASIC sees neither.
++    deferIngressPort(getQueueId(), port, false);
+ 
+     if (shared_egress_acl_table)
+     {
+-        rule = gAclOrch->getAclRule(m_strEgressTable, m_strEgressRule);
++        AclRule *rule = gAclOrch->getAclRule(m_strEgressTable, m_strEgressRule);
+         if (rule == nullptr)
+         {
+             SWSS_LOG_THROW("Egress ACL Rule does not exist for rule %s", m_strEgressRule.c_str());
+@@ -441,6 +429,9 @@ void PfcWdAclHandler::clear()
+ {
+     SWSS_LOG_ENTER();
+ 
++    // The tables are going away, so any queued IN_PORTS edit is moot.
++    m_pendingInPorts.clear();
++
+     for (auto& tablepair: m_aclTables)
+     {
+         auto& table = tablepair.second;
+@@ -536,7 +527,91 @@ void PfcWdAclHandler::createPfcAclRule(shared_ptr<AclRulePacket> rule, uint8_t q
+     gAclOrch->addAclRule(rule, strTable);
+ }
+ 
++std::string PfcWdAclHandler::ingressRuleName(uint8_t queueId)
++{
++    return "Rule_PfcWdAclHandler_" + std::to_string(queueId);
++}
++
++void PfcWdAclHandler::deferIngressPort(uint8_t queueId, sai_object_id_t port, bool add)
++{
++    SWSS_LOG_ENTER();
++
++    m_pendingInPorts[queueId][port] = PendingPortOp{ add };
++}
++
++void PfcWdAclHandler::flush(void)
++{
++    SWSS_LOG_ENTER();
++
++    if (m_pendingInPorts.empty())
++    {
++        return;
++    }
++
++    // Detach first: a failure below must not leave the same change queued
++    // forever.
++    std::map<uint8_t, std::map<sai_object_id_t, PendingPortOp>> pending;
++    pending.swap(m_pendingInPorts);
++
++    for (const auto &queuePair: pending)
++    {
++        const std::string strRule = ingressRuleName(queuePair.first);
++
++        AclRule *rule = gAclOrch->getAclRule(INGRESS_TABLE_DROP, strRule);
++        if (rule == nullptr)
++        {
++            // The rule was never created, or has already gone.
++            continue;
++        }
++
++        std::vector<sai_object_id_t> toAdd, toRemove;
++        for (const auto &portPair: queuePair.second)
++        {
++            if (portPair.second.add)
++            {
++                toAdd.push_back(portPair.first);
++            }
++            else
++            {
++                toRemove.push_back(portPair.first);
++            }
++        }
++
++        // Decide whether the rule survives this batch before touching SAI.
++        std::set<sai_object_id_t> ports;
++        for (auto p: rule->getInPorts())
++        {
++            ports.insert(p);
++        }
++        for (auto p: toAdd)
++        {
++            ports.insert(p);
++        }
++        for (auto p: toRemove)
++        {
++            ports.erase(p);
++        }
++
++        if (ports.empty())
++        {
++            // Last storming port on this queue index recovered. A rule with an
++            // empty IN_PORTS list would match every port, so remove it.
++            if (!gAclOrch->removeAclRule(INGRESS_TABLE_DROP, strRule))
++            {
++                SWSS_LOG_ERROR("Failed to remove ingress PFCWD drop rule %s", strRule.c_str());
++            }
++            continue;
++        }
++
++        if (!gAclOrch->updateAclRuleInPorts(INGRESS_TABLE_DROP, strRule, toAdd, toRemove))
++        {
++            SWSS_LOG_ERROR("Failed to update ingress PFCWD drop rule %s", strRule.c_str());
++        }
++    }
++}
++
+ std::map<std::string, AclTable> PfcWdAclHandler::m_aclTables;
++std::map<uint8_t, std::map<sai_object_id_t, PfcWdAclHandler::PendingPortOp>> PfcWdAclHandler::m_pendingInPorts;
+ 
+ PfcWdLossyHandler::PfcWdLossyHandler(sai_object_id_t port, sai_object_id_t queue,
+         uint8_t queueId, shared_ptr<Table> countersTable):
+diff --git a/orchagent/pfcactionhandler.h b/orchagent/pfcactionhandler.h
+index 9fa409af..153680e6 100644
+--- a/orchagent/pfcactionhandler.h
++++ b/orchagent/pfcactionhandler.h
+@@ -3,6 +3,9 @@
+ 
+ #include <vector>
+ #include <memory>
++#include <map>
++#include <set>
++#include <string>
+ #include "aclorch.h"
+ #include "table.h"
+ 
+@@ -46,6 +49,12 @@ class PfcWdActionHandler
+             return m_queueId;
+         }
+ 
++        // Apply whatever hardware work this handler type deferred while a batch
++        // of watchdog events was being processed. Handlers with nothing to
++        // defer do nothing; the name is hidden by the derived type where it
++        // matters.
++        static void flush(void) { }
++
+         static void initWdCounters(shared_ptr<Table> countersTable, const string &queueIdStr);
+         void initCounters(void);
+         void commitCounters(bool periodic = false);
+@@ -103,10 +112,33 @@ class PfcWdAclHandler: public PfcWdLossyHandler
+ 
+         // class shared cleanup
+         static void clear();
++
++        // Apply the ingress IN_PORTS changes accumulated since the last flush:
++        // one set_acl_entry_attribute per queue index, rather than one per
++        // (port, queue). SAI replaces a rule's whole port list on every write,
++        // so programming each storm as it arrives is quadratic in the number of
++        // storming ports.
++        static void flush(void);
+     private:
+         // class shared dict: ACL table name -> ACL table
+         static std::map<std::string, AclTable> m_aclTables;
+ 
++        // A deferred ingress change, recorded by the constructor (add) or the
++        // destructor (remove) and applied by flush().
++        struct PendingPortOp
++        {
++            bool add = true;
++        };
++
++        // Pending IN_PORTS changes, by queue index and then by port. Indexing by
++        // port means a storm and a restore on the same (port, TC) inside one
++        // batch collapse to a single net change, so the ASIC never sees the
++        // intermediate state.
++        static std::map<uint8_t, std::map<sai_object_id_t, PendingPortOp>> m_pendingInPorts;
++
++        static std::string ingressRuleName(uint8_t queueId);
++        static void deferIngressPort(uint8_t queueId, sai_object_id_t port, bool add);
++
+         bool shared_egress_acl_table = false;
+ 
+         string m_strIngressTable;
+diff --git a/orchagent/pfcwdorch.cpp b/orchagent/pfcwdorch.cpp
+index b70b72bb..0642f247 100644
+--- a/orchagent/pfcwdorch.cpp
++++ b/orchagent/pfcwdorch.cpp
+@@ -1,5 +1,6 @@
+ #include <limits.h>
+ #include <inttypes.h>
++#include <deque>
+ #include <unordered_map>
+ #include "pfcwdorch.h"
+ #include "sai_serialize.h"
+@@ -419,6 +420,10 @@ void PfcWdSwOrch<DropHandler, ForwardHandler>::disableBigRedSwitchMode()
+         this->getCountersDb()->hdel(countersKey, "BIG_RED_SWITCH_MODE");
+     }
+ 
++    // Tearing down every handler queued one ACL change per (port, queue);
++    // push them all with one call per queue index.
++    DropHandler::flush();
++
+     m_brsEntryMap.clear();
+ }
+ 
+@@ -522,6 +527,10 @@ void PfcWdSwOrch<DropHandler, ForwardHandler>::enableBigRedSwitchMode()
+             }
+         }
+     }
++
++    // BIG_RED_SWITCH installs a handler on every lossless queue of every port
++    // at once - exactly the case batching exists for.
++    DropHandler::flush();
+ }
+ 
+ template <typename DropHandler, typename ForwardHandler>
+@@ -669,6 +678,9 @@ void PfcWdSwOrch<DropHandler, ForwardHandler>::unregisterFromWdDb(const Port& po
+         this->getCountersDb()->hdel(countersKey, {"PFC_WD_DETECTION_TIME", "PFC_WD_RESTORATION_TIME", "PFC_WD_ACTION", "PFC_WD_STATUS"});
+     }
+ 
++    // Destroying the handlers above queued their ACL removals.
++    DropHandler::flush();
++    ForwardHandler::flush();
+ }
+ 
+ template <typename DropHandler, typename ForwardHandler>
+@@ -850,6 +862,11 @@ void PfcWdSwOrch<DropHandler, ForwardHandler>::doTask(Consumer& consumer)
+ 
+             it = consumer.m_toSync.erase(it);
+         }
++
++        // Warm reboot can replay a storm on every port at once; apply the whole
++        // replay with one ACL update per queue index.
++        DropHandler::flush();
++        ForwardHandler::flush();
+     }
+ }
+ 
+@@ -891,29 +908,51 @@ void PfcWdSwOrch<DropHandler, ForwardHandler>::doTask(swss::NotificationConsumer
+ {
+     SWSS_LOG_ENTER();
+ 
+-    string queueIdStr;
+-    string event;
+-    vector<swss::FieldValueTuple> values;
++    // Drain every event the detection plugin published, not one per select()
++    // wake-up. A single poll can report a storm on many (port, queue) pairs, and
++    // handling them as a batch lets the action handlers coalesce their ACL work.
++    std::deque<KeyOpFieldsValuesTuple> events;
++    wdNotification.pops(events);
+ 
+-    wdNotification.pop(queueIdStr, event, values);
+-
+-    string info;
+-    for (auto &fv : values)
+-    {
+-        info += fvField(fv) + ":" + fvValue(fv) + "|";
+-    }
+-    if (!info.empty())
++    for (auto &notification : events)
+     {
+-        info.pop_back();
+-    }
++        // The plugin publishes the JSON array ["<queue oid>", "<event>"].
++        // NotificationConsumer::pops() puts the first element in the tuple's op
++        // field and the second in its key field.
++        const string &queueIdStr = kfvOp(notification);
++        const string &event = kfvKey(notification);
++
++        string info;
++        for (auto &fv : kfvFieldsValues(notification))
++        {
++            info += fvField(fv) + ":" + fvValue(fv) + "|";
++        }
++        if (!info.empty())
++        {
++            info.pop_back();
++        }
+ 
+-    sai_object_id_t queueId = SAI_NULL_OBJECT_ID;
+-    sai_deserialize_object_id(queueIdStr, queueId);
++        sai_object_id_t queueId = SAI_NULL_OBJECT_ID;
++        try
++        {
++            sai_deserialize_object_id(queueIdStr, queueId);
++        }
++        catch (const std::exception &e)
++        {
++            // One malformed event must not drop the rest of the batch.
++            SWSS_LOG_ERROR("Failed to parse PFC watchdog event queue id %s: %s",
++                           queueIdStr.c_str(), e.what());
++            continue;
++        }
+ 
+-    if (!startWdActionOnQueue(event, queueId, info))
+-    {
+-        SWSS_LOG_ERROR("Failed to start PFC watchdog %s event action on queue %s", event.c_str(), queueIdStr.c_str());
++        if (!startWdActionOnQueue(event, queueId, info))
++        {
++            SWSS_LOG_ERROR("Failed to start PFC watchdog %s event action on queue %s", event.c_str(), queueIdStr.c_str());
++        }
+     }
++
++    DropHandler::flush();
++    ForwardHandler::flush();
+ }
+ 
+ template <typename DropHandler, typename ForwardHandler>

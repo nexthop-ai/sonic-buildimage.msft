@@ -1,0 +1,53 @@
+Subject: Do not enter vendor SAI critical section for counter polling/clearing
+
+Backport of sonic-net/sonic-sairedis#1748 (merge 8b289f7ee7e6, 2026-04-18),
+which landed on upstream master but was never cherry-picked to the 202511
+branch this tree tracks.
+
+Counter polling and clearing do not need the vendor SAI global mutex; holding
+it serialises the flex counter thread against every other SAI operation.
+
+Upstream: https://github.com/sonic-net/sonic-sairedis/pull/1748
+
+--- a/syncd/VendorSai.cpp
++++ b/syncd/VendorSai.cpp
+@@ -359,7 +359,6 @@
+         _In_ const sai_stat_id_t *counter_ids,
+         _Out_ uint64_t *counters)
+ {
+-    MUTEX();
+     SWSS_LOG_ENTER();
+     VENDOR_CHECK_API_INITIALIZED();
+ 
+@@ -414,7 +413,6 @@
+         _In_ sai_stats_mode_t mode,
+         _Out_ uint64_t *counters)
+ {
+-    MUTEX();
+     SWSS_LOG_ENTER();
+     VENDOR_CHECK_API_INITIALIZED();
+ 
+@@ -429,7 +427,6 @@
+         _In_ uint32_t number_of_counters,
+         _In_ const sai_stat_id_t *counter_ids)
+ {
+-    MUTEX();
+     SWSS_LOG_ENTER();
+     VENDOR_CHECK_API_INITIALIZED();
+ 
+@@ -449,7 +446,6 @@
+         _Inout_ sai_status_t *object_statuses,
+         _Out_ uint64_t *counters)
+ {
+-    MUTEX();
+     SWSS_LOG_ENTER();
+     VENDOR_CHECK_API_INITIALIZED();
+ 
+@@ -477,7 +473,6 @@
+         _In_ sai_stats_mode_t mode,
+         _Inout_ sai_status_t *object_statuses)
+ {
+-    MUTEX();
+     SWSS_LOG_ENTER();
+     VENDOR_CHECK_API_INITIALIZED();
+ 
