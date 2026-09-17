@@ -1,0 +1,141 @@
+From 73f8ae54b87763480599cadabc3c435b4fa7b1ac Mon Sep 17 00:00:00 2001
+From: nh <nh@x>
+Date: Wed, 16 Sep 2026 18:38:31 +0000
+Subject: [PATCH 3/3] 0003 pfcwd storm counters from COUNTERS_DB (#1241)
+
+---
+ orchagent/pfcactionhandler.cpp | 85 ++++++++++++++++++++--------------
+ orchagent/pfcactionhandler.h   |  5 ++
+ 2 files changed, 54 insertions(+), 36 deletions(-)
+
+diff --git a/orchagent/pfcactionhandler.cpp b/orchagent/pfcactionhandler.cpp
+index c6ce2dac..434a9825 100644
+--- a/orchagent/pfcactionhandler.cpp
++++ b/orchagent/pfcactionhandler.cpp
+@@ -673,34 +673,39 @@ bool PfcWdLossyHandler::getHwCounters(PfcWdHwStats& counters)
+ {
+     SWSS_LOG_ENTER();
+ 
+-    static const vector<sai_stat_id_t> queueStatIds =
+-    {
+-        SAI_QUEUE_STAT_PACKETS,
+-        SAI_QUEUE_STAT_DROPPED_PACKETS,
+-    };
++    // Read the queue and priority group counters from the flex counter cache in
++    // COUNTERS_DB instead of issuing synchronous SAI gets. This runs on every
++    // storm and every restore, and on the periodic sweep for every queue in
++    // storm, so at scale the SAI path spends most of its time serialised
++    // against the counter polling threads for values already being collected.
++    const auto &countersTable = getCountersTable();
++    if (countersTable == nullptr)
++    {
++        SWSS_LOG_ERROR("No counters table for queue 0x%" PRIx64, getQueue());
++        return false;
++    }
+ 
+-    static const vector<sai_stat_id_t> pgStatIds =
++    vector<FieldValueTuple> fieldValues;
++    if (!countersTable->get(sai_serialize_object_id(getQueue()), fieldValues))
+     {
+-        SAI_INGRESS_PRIORITY_GROUP_STAT_PACKETS,
+-        SAI_INGRESS_PRIORITY_GROUP_STAT_DROPPED_PACKETS,
+-    };
+-
+-    vector<uint64_t> queueStats;
+-    queueStats.resize(queueStatIds.size());
++        SWSS_LOG_INFO("No counter entry for queue 0x%" PRIx64, getQueue());
++        return false;
++    }
+ 
+-    sai_status_t status = sai_queue_api->get_queue_stats(
+-            getQueue(),
+-            static_cast<uint32_t>(queueStatIds.size()),
+-            queueStatIds.data(),
+-            queueStats.data());
++    PfcWdHwStats hwStats = {};
+ 
+-    if (status != SAI_STATUS_SUCCESS)
++    for (const auto &fv: fieldValues)
+     {
+-        SWSS_LOG_ERROR("Failed to fetch queue 0x%" PRIx64 " stats: %d", getQueue(), status);
+-        return false;
++        if (fvField(fv) == "SAI_QUEUE_STAT_PACKETS")
++        {
++            hwStats.txPkt = stoull(fvValue(fv));
++        }
++        else if (fvField(fv) == "SAI_QUEUE_STAT_DROPPED_PACKETS")
++        {
++            hwStats.txDropPkt = stoull(fvValue(fv));
++        }
+     }
+ 
+-    // PG counters not yet supported in Mellanox platform
+     Port portInstance;
+     if (!gPortsOrch->getPort(getPort(), portInstance))
+     {
+@@ -708,26 +713,34 @@ bool PfcWdLossyHandler::getHwCounters(PfcWdHwStats& counters)
+         return false;
+     }
+ 
+-    sai_object_id_t pg = portInstance.m_priority_group_ids[static_cast <size_t> (getQueueId())];
+-    vector<uint64_t> pgStats;
+-    pgStats.resize(pgStatIds.size());
++    if (static_cast<size_t>(getQueueId()) >= portInstance.m_priority_group_ids.size())
++    {
++        SWSS_LOG_ERROR("Port 0x%" PRIx64 " has no priority group for queue index %u",
++                       getPort(), getQueueId());
++        return false;
++    }
+ 
+-    status = sai_buffer_api->get_ingress_priority_group_stats(
+-            pg,
+-            static_cast<uint32_t>(pgStatIds.size()),
+-            pgStatIds.data(),
+-            pgStats.data());
++    sai_object_id_t pg = portInstance.m_priority_group_ids[static_cast<size_t>(getQueueId())];
+ 
+-    if (status != SAI_STATUS_SUCCESS)
++    // The RX side stays zero where the platform does not collect PG counters,
++    // which leaves the TX side usable instead of failing the whole read.
++    fieldValues.clear();
++    if (countersTable->get(sai_serialize_object_id(pg), fieldValues))
+     {
+-        SWSS_LOG_ERROR("Failed to fetch pg 0x%" PRIx64 " stats: %d", pg, status);
+-        return false;
++        for (const auto &fv: fieldValues)
++        {
++            if (fvField(fv) == "SAI_INGRESS_PRIORITY_GROUP_STAT_PACKETS")
++            {
++                hwStats.rxPkt = stoull(fvValue(fv));
++            }
++            else if (fvField(fv) == "SAI_INGRESS_PRIORITY_GROUP_STAT_DROPPED_PACKETS")
++            {
++                hwStats.rxDropPkt = stoull(fvValue(fv));
++            }
++        }
+     }
+ 
+-    counters.txPkt = queueStats[0];
+-    counters.txDropPkt = queueStats[1];
+-    counters.rxPkt = pgStats[0];
+-    counters.rxDropPkt = pgStats[1];
++    counters = hwStats;
+ 
+     return true;
+ }
+diff --git a/orchagent/pfcactionhandler.h b/orchagent/pfcactionhandler.h
+index 153680e6..fd82bf85 100644
+--- a/orchagent/pfcactionhandler.h
++++ b/orchagent/pfcactionhandler.h
+@@ -49,6 +49,11 @@ class PfcWdActionHandler
+             return m_queueId;
+         }
+ 
++        inline const shared_ptr<Table>& getCountersTable(void) const
++        {
++            return m_countersTable;
++        }
++
+         // Apply whatever hardware work this handler type deferred while a batch
+         // of watchdog events was being processed. Handlers with nothing to
+         // defer do nothing; the name is hidden by the derived type where it
