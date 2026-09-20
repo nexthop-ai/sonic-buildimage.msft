@@ -143,7 +143,12 @@
     },
     "dev_attr": {
       "event_driven_power_cycle_control_reg_offset": "0x28",
-      "watchdog_counter_reg_offset": "0x1E0"
+      "watchdog_counter_reg_offset": "0x1E0",
+      "use_watchdog_msi": {
+        "msi_domain": 0,
+        "hw_irq": 0,
+        "watchdog_counter_msi_reg": "0x1D8"
+      }
     }
   },
   "MULTIFPGAPCIESYSTEM0": {
@@ -272,7 +277,6 @@
       ]
     },
     "use_msi": {
-      "min_fpga_version": "0x1",
       "num_msi_vectors": 1,
       "msi_domains": [
         {
@@ -932,7 +936,6 @@
       ]
     },
     "use_msi": {
-      "min_fpga_version": "0x0",
       "num_msi_vectors": 3,
       "msi_domains": [
         {
@@ -956,11 +959,7 @@
           "interrupt_enable_reg": "180",
           "interrupt_status_reg": "184"
         }
-      ],
-      "watchdog": {
-        "msi_domain": 0,
-        "hw_irq": 0
-      }
+      ]
     },
     "spi_controllers": [
       "SWITCHCARD_SPI_CONTROLLER0"
@@ -1688,7 +1687,6 @@
       ]
     },
     "use_msi": {
-      "min_fpga_version": "0x0",
       "num_msi_vectors": 3,
       "msi_domains": [
         {
@@ -1712,11 +1710,7 @@
           "interrupt_enable_reg": "180",
           "interrupt_status_reg": "184"
         }
-      ],
-      "watchdog": {
-        "msi_domain": 0,
-        "hw_irq": 0
-      }
+      ]
     }
   },
   "COMPONENT3": {
@@ -2182,7 +2176,7 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xc4{% else %}0x250{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xc4"{% else %}"0x250"{% endif %},
           "attr_mask": "0x000000ff",
           "attr_len": "4"
         },
@@ -2232,7 +2226,7 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xc4{% else %}0x250{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xc4"{% else %}"0x250"{% endif %},
           "attr_mask": "0x000000ff",
           "attr_len": "4"
         },
@@ -2282,8 +2276,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xc4{% else %}0x254{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0x0000ff00{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xc4"{% else %}"0x254"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0x0000ff00"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2332,8 +2326,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xc4{% else %}0x254{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0x0000ff00{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xc4"{% else %}"0x254"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0x0000ff00"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2382,8 +2376,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xc4{% else %}0x258{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0x00ff0000{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xc4"{% else %}"0x258"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0x00ff0000"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2432,8 +2426,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xc4{% else %}0x258{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0x00ff0000{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xc4"{% else %}"0x258"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0x00ff0000"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2482,8 +2476,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xc4{% else %}0x25c{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0xff000000{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xc4"{% else %}"0x25c"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0xff000000"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2532,8 +2526,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xc4{% else %}0x25c{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0xff000000{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xc4"{% else %}"0x25c"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0xff000000"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2582,7 +2576,7 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xb0{% else %}0x240{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xb0"{% else %}"0x240"{% endif %},
           "attr_mask": "0x000000ff",
           "attr_len": "4"
         },
@@ -2632,7 +2626,7 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xb0{% else %}0x240{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xb0"{% else %}"0x240"{% endif %},
           "attr_mask": "0x000000ff",
           "attr_len": "4"
         },
@@ -2682,8 +2676,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xb0{% else %}0x244{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0x0000ff00{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xb0"{% else %}"0x244"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0x0000ff00"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2732,8 +2726,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xb0{% else %}0x244{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0x0000ff00{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xb0"{% else %}"0x244"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0x0000ff00"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2782,8 +2776,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xb0{% else %}0x248{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0x00ff0000{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xb0"{% else %}"0x248"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0x00ff0000"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2832,8 +2826,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xb0{% else %}0x248{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0x00ff0000{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xb0"{% else %}"0x248"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0x00ff0000"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2882,8 +2876,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xb0{% else %}0x24c{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0xff000000{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xb0"{% else %}"0x24c"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0xff000000"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         },
         {
@@ -2932,8 +2926,8 @@
           "attr_devaddr": "0x0",
           "attr_devtype": "multifpgapci",
           "attr_devname": "SWITCHCARD_FPGA1",
-          "attr_offset": "{% if fan_duty_packed_in_one_word %}0xb0{% else %}0x24c{% endif %}",
-          "attr_mask": "{% if fan_duty_packed_in_one_word %}0xff000000{% else %}0x000000ff{% endif %}",
+          "attr_offset": {% if fan_duty_packed_in_one_word %}"0xb0"{% else %}"0x24c"{% endif %},
+          "attr_mask": {% if fan_duty_packed_in_one_word %}"0xff000000"{% else %}"0x000000ff"{% endif %},
           "attr_len": "4"
         }
       ]
