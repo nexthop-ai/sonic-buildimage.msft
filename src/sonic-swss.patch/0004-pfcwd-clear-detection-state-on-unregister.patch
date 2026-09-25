@@ -1,0 +1,38 @@
+diff --git a/orchagent/pfcwdorch.cpp b/orchagent/pfcwdorch.cpp
+index 0642f247..fe22dbdb 100644
+--- a/orchagent/pfcwdorch.cpp
++++ b/orchagent/pfcwdorch.cpp
+@@ -660,6 +660,8 @@ void PfcWdSwOrch<DropHandler, ForwardHandler>::unregisterFromWdDb(const Port& po
+ 
+     this->m_pfcwdFlexCounterManager->clearCounterIdList(port.m_port_id, SAI_OBJECT_TYPE_PORT);
+ 
++    string portCountersKey = this->getCountersTable()->getTableName() + this->getCountersTable()->getTableNameSeparator() + sai_serialize_object_id(port.m_port_id);
++
+     for (uint8_t i = 0; i < PFC_WD_TC_MAX; i++)
+     {
+         sai_object_id_t queueId = port.m_queue_ids[i];
+@@ -676,6 +678,24 @@ void PfcWdSwOrch<DropHandler, ForwardHandler>::unregisterFromWdDb(const Port& po
+         // Clean up
+         string countersKey = this->getCountersTable()->getTableName() + this->getCountersTable()->getTableNameSeparator() + sai_serialize_object_id(queueId);
+         this->getCountersDb()->hdel(countersKey, {"PFC_WD_DETECTION_TIME", "PFC_WD_RESTORATION_TIME", "PFC_WD_ACTION", "PFC_WD_STATUS"});
++
++        // Also drop the detect/restore plugins' countdowns and sampling
++        // baseline, as bake() does on warm restart.  Left behind, a re-enable
++        // compares its first sample against pre-disable counters and resumes a
++        // partly spent countdown, so a storm can be declared before the new
++        // registration's detection time has elapsed.
++        this->getCountersDb()->hdel(countersKey, {
++                "PFC_WD_DETECTION_TIME_LEFT",
++                "PFC_WD_RESTORATION_TIME_LEFT",
++                "SAI_QUEUE_STAT_PACKETS_last",
++                "SAI_QUEUE_ATTR_PAUSE_STATUS_last"});
++
++        string pfcPrefix = "SAI_PORT_STAT_PFC_" + to_string(i);
++        this->getCountersDb()->hdel(portCountersKey, {
++                pfcPrefix + "_RX_PKTS_last",
++                pfcPrefix + "_ON2OFF_RX_PKTS_last",
++                pfcPrefix + "_RX_PAUSE_DURATION_last",
++                pfcPrefix + "_RX_PAUSE_DURATION_US_last"});
+     }
+ 
+     // Destroying the handlers above queued their ACL removals.

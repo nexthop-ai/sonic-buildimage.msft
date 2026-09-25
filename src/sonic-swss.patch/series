@@ -1,3 +1,4 @@
 0001-pfcwd-batch-ingress-in-ports-updates.patch
 0002-pfcwd-detect-plugin-cost-and-poll-stats.patch
 0003-pfcwd-storm-counters-from-counters-db.patch
+0004-pfcwd-clear-detection-state-on-unregister.patch
