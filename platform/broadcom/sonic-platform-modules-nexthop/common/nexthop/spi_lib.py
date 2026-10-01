@@ -35,7 +35,7 @@ def spi_device_to_component(device_name) -> str | None:
         component_name = device_name.replace("ASIC_BOOT_FLASH", "ASIC_PCIE")
     elif "CPUCARD" in device_name or "SWITCHCARD" in device_name or "MEZZCARD" in device_name:
         component_name = device_name.replace("CONFIG_FLASH", "FPGA")
-    elif "MGMT_SWITCH" in device_name:
+    elif "MGMT-SWITCH" in device_name:
         component_name = "MGMT_SWITCH"
     # TODO: Add MGMT PHY support
     else:
@@ -56,7 +56,7 @@ def component_to_spi_device(component_name) -> str | None:
     elif "ASIC_PCIE" in component_name:
         device_name = component_name.replace("PCIE", "BOOT_FLASH")
     elif "MGMT_SWITCH" in component_name:
-        device_name = "MGMT_SWITCH_EEPROM"
+        device_name = "MGMT-SWITCH-EEPROM"
     # TODO: Add MGMT PHY support
     else:
         device_name = None

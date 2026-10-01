@@ -9,7 +9,7 @@
     "num_voltage_sensors" : 24,
     "num_current_sensors" : 8,
     "num_nexthop_fpga_asic_temp_sensors": 2,
-    "num_components": 6,
+    "num_components": 7,
     "nexthop_thermal_xcvr_setpoint_margin" : 8,
     "nexthop_thermal_xcvr_setpoint_override" : null,
     "nexthop_thermal_xcvr_pid_domain": "main",
@@ -155,6 +155,21 @@
           { "attr_name": "revision", "get_cmd": "echo N/A" },
           { "attr_name": "update", "cmd": "/var/platform/fwpackage/fwpackage/update_firmware.py NH-4010-F NVMe {}" }
       ]
+  },
+  "COMPONENT7": {
+    "comp_attr": {
+      "name": "MGMT_SWITCH",
+      "type": "mgmt_switch",
+      "description": "Management switch",
+      "boot_type": "cold"
+    },
+    "attr_list": [
+      { "attr_name": "version", "get_cmd": "read_mgmt_switch_version.py" },
+      { "attr_name": "model", "get_cmd": "echo 'N/A'" },
+      { "attr_name": "serial", "get_cmd": "echo 'N/A'" },
+      { "attr_name": "revision", "get_cmd": "echo 'N/A'" },
+      { "attr_name": "update", "cmd": "/var/platform/fwpackage/fwpackage/update_firmware.py {{model_name}} MGMT_SWITCH {}" }
+    ]
   },
   "SYSTEM": {
     "dev_info": {

@@ -6,7 +6,7 @@
     "num_nexthop_fpga_asic_temp_sensors": 2,
     "num_voltage_sensors": 70,
     "num_current_sensors": 23,
-    "num_components": 28,
+    "num_components": 29,
     "num_fantrays": 8,
     "num_fans_pertray": 2,
     "std_kos": [
@@ -1997,6 +1997,102 @@
       }
     ]
   },
+  "MGMT-SWCH-EEPROM": {
+    "dev_info": {
+      "device_type": "EEPROM",
+      "device_name": "MGMT-SWCH-EEPROM",
+      "device_parent": "MULTIFPGAPCIE0"
+    },
+    "i2c": {
+      "topo_info": {
+        "parent_bus": "0xc",
+        "dev_addr": "0x50",
+        "dev_type": "24c512"
+      },
+      "dev_attr": {
+        "access_mode": "BLOCK"
+      },
+      "attr_list": [
+        {
+          "attr_name": "eeprom"
+        }
+      ]
+    }
+  },
+  "COMPONENT9": {
+    "comp_attr": {
+      "name": "MGMT_SWITCH",
+      "type": "mgmt_switch",
+      "description": "Management switch",
+      "boot_type": "cold"
+    },
+    "attr_list": [
+      {
+        "attr_name": "version",
+        "get_cmd": "read_mgmt_switch_version.py"
+      },
+      {
+        "attr_name": "model",
+        "get_cmd": "echo 'N/A'"
+      },
+      {
+        "attr_name": "serial",
+        "get_cmd": "echo 'N/A'"
+      },
+      {
+        "attr_name": "revision",
+        "get_cmd": "echo 'N/A'"
+      },
+      {
+        "attr_name": "update",
+        "cmd": "/var/platform/fwpackage/fwpackage/update_firmware.py {{model_name}} MGMT_SWITCH {}"
+      }
+    ]
+  },
+  "MEZZCARD0-EEPROM": {
+    "dev_info": {
+      "device_type": "EEPROM",
+      "device_name": "MEZZCARD0-EEPROM",
+      "device_parent": "MULTIFPGAPCIE2"
+    },
+    "i2c": {
+      "topo_info": {
+        "parent_bus": "0x64",
+        "dev_addr": "0x50",
+        "dev_type": "24c64"
+      },
+      "dev_attr": {
+        "access_mode": "BLOCK"
+      },
+      "attr_list": [
+        {
+          "attr_name": "eeprom"
+        }
+      ]
+    }
+  },
+  "MEZZCARD1-EEPROM": {
+    "dev_info": {
+      "device_type": "EEPROM",
+      "device_name": "MEZZCARD1-EEPROM",
+      "device_parent": "MULTIFPGAPCIE2"
+    },
+    "i2c": {
+      "topo_info": {
+        "parent_bus": "0x65",
+        "dev_addr": "0x50",
+        "dev_type": "24c64"
+      },
+      "dev_attr": {
+        "access_mode": "BLOCK"
+      },
+      "attr_list": [
+        {
+          "attr_name": "eeprom"
+        }
+      ]
+    }
+  },
   "NEXTHOP-FPGA-ASIC-TEMP-SENSOR0": {
     "dev_info": {
       "device_type": "NEXTHOP_FPGA_ASIC_TEMP_SENSOR",
@@ -2041,72 +2137,6 @@
     "i2c": {
       "topo_info": {
         "parent_bus": "0xb",
-        "dev_addr": "0x50",
-        "dev_type": "24c64"
-      },
-      "dev_attr": {
-        "access_mode": "BLOCK"
-      },
-      "attr_list": [
-        {
-          "attr_name": "eeprom"
-        }
-      ]
-    }
-  },
-  "MGMT-SWCH-EEPROM": {
-    "dev_info": {
-      "device_type": "EEPROM",
-      "device_name": "MGMT-SWCH-EEPROM",
-      "device_parent": "MULTIFPGAPCIE0"
-    },
-    "i2c": {
-      "topo_info": {
-        "parent_bus": "0xc",
-        "dev_addr": "0x50",
-        "dev_type": "24c512"
-      },
-      "dev_attr": {
-        "access_mode": "BLOCK"
-      },
-      "attr_list": [
-        {
-          "attr_name": "eeprom"
-        }
-      ]
-    }
-  },
-  "MEZZCARD0-EEPROM": {
-    "dev_info": {
-      "device_type": "EEPROM",
-      "device_name": "MEZZCARD0-EEPROM",
-      "device_parent": "CPLDMUX2"
-    },
-    "i2c": {
-      "topo_info": {
-        "parent_bus": "0xa7",
-        "dev_addr": "0x50",
-        "dev_type": "24c64"
-      },
-      "dev_attr": {
-        "access_mode": "BLOCK"
-      },
-      "attr_list": [
-        {
-          "attr_name": "eeprom"
-        }
-      ]
-    }
-  },
-  "MEZZCARD1-EEPROM": {
-    "dev_info": {
-      "device_type": "EEPROM",
-      "device_name": "MEZZCARD1-EEPROM",
-      "device_parent": "CPLDMUX3"
-    },
-    "i2c": {
-      "topo_info": {
-        "parent_bus": "0xab",
         "dev_addr": "0x50",
         "dev_type": "24c64"
       },
@@ -3200,7 +3230,7 @@
       ]
     }
   },
-  "COMPONENT9": {
+  "COMPONENT10": {
     "comp_attr": {
       "name": "PSU1",
       "type": "psu",
@@ -3491,7 +3521,7 @@
       ]
     }
   },
-  "COMPONENT10": {
+  "COMPONENT11": {
     "comp_attr": {
       "name": "PSU2",
       "type": "psu",
@@ -3782,7 +3812,7 @@
       ]
     }
   },
-  "COMPONENT11": {
+  "COMPONENT12": {
     "comp_attr": {
       "name": "PSU3",
       "type": "psu",
@@ -4073,7 +4103,7 @@
       ]
     }
   },
-  "COMPONENT12": {
+  "COMPONENT13": {
     "comp_attr": {
       "name": "PSU4",
       "type": "psu",
@@ -23157,7 +23187,7 @@
       }
     }
   },
-  "COMPONENT13": {
+  "COMPONENT14": {
     "comp_attr": {
       "name": "DPM1",
       "type": "dpm",
@@ -23796,7 +23826,7 @@
       }
     }
   },
-  "COMPONENT14": {
+  "COMPONENT15": {
     "comp_attr": {
       "name": "DPM2",
       "type": "dpm",
@@ -24365,7 +24395,7 @@
       }
     }
   },
-  "COMPONENT15": {
+  "COMPONENT16": {
     "comp_attr": {
       "name": "DPM3",
       "type": "dpm",
@@ -24934,7 +24964,7 @@
       }
     }
   },
-  "COMPONENT16": {
+  "COMPONENT17": {
     "comp_attr": {
       "name": "DCDC0",
       "type": "dcdc",
@@ -25069,7 +25099,7 @@
       }
     }
   },
-  "COMPONENT17": {
+  "COMPONENT18": {
     "comp_attr": {
       "name": "DCDC1",
       "type": "dcdc",
@@ -25266,7 +25296,7 @@
       }
     }
   },
-  "COMPONENT18": {
+  "COMPONENT19": {
     "comp_attr": {
       "name": "DCDC2",
       "type": "dcdc",
@@ -25463,7 +25493,7 @@
       }
     }
   },
-  "COMPONENT19": {
+  "COMPONENT20": {
     "comp_attr": {
       "name": "DCDC3",
       "type": "dcdc",
@@ -25660,7 +25690,7 @@
       }
     }
   },
-  "COMPONENT20": {
+  "COMPONENT21": {
     "comp_attr": {
       "name": "DCDC4",
       "type": "dcdc",
@@ -25857,7 +25887,7 @@
       }
     }
   },
-  "COMPONENT21": {
+  "COMPONENT22": {
     "comp_attr": {
       "name": "DCDC5",
       "type": "dcdc",
@@ -26054,7 +26084,7 @@
       }
     }
   },
-  "COMPONENT22": {
+  "COMPONENT23": {
     "comp_attr": {
       "name": "DCDC6",
       "type": "dcdc",
@@ -26251,7 +26281,7 @@
       }
     }
   },
-  "COMPONENT23": {
+  "COMPONENT24": {
     "comp_attr": {
       "name": "DCDC7",
       "type": "dcdc",
@@ -26448,7 +26478,7 @@
       }
     }
   },
-  "COMPONENT24": {
+  "COMPONENT25": {
     "comp_attr": {
       "name": "DCDC8",
       "type": "dcdc",
@@ -26645,7 +26675,7 @@
       }
     }
   },
-  "COMPONENT25": {
+  "COMPONENT26": {
     "comp_attr": {
       "name": "DCDC9",
       "type": "dcdc",
@@ -26781,7 +26811,7 @@
       }
     }
   },
-  "COMPONENT26": {
+  "COMPONENT27": {
     "comp_attr": {
       "name": "DCDC10",
       "type": "dcdc",
@@ -26917,7 +26947,7 @@
       }
     }
   },
-  "COMPONENT27": {
+  "COMPONENT28": {
     "comp_attr": {
       "name": "DCDC11",
       "type": "dcdc",
@@ -27116,7 +27146,7 @@
       }
     }
   },
-  "COMPONENT28": {
+  "COMPONENT29": {
     "comp_attr": {
       "name": "DCDC12",
       "type": "dcdc",
