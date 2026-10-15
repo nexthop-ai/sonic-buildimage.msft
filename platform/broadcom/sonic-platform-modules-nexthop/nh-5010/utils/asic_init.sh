@@ -37,6 +37,13 @@ komodo_fpga_read() {
   fi
 }
 
+function cleanup() {
+  # --end before the unlock, or a queued run's rows get deleted by ours.
+  nh_asic_powercycle --end
+  /usr/bin/flock -u ${LOCKFD}
+  logger -t $LOG_TAG "Released ${LOCKFILE}"
+}
+
 function acquire_lock() {
   if [[ ! -f $LOCKFILE ]]; then
     touch $LOCKFILE
@@ -46,14 +53,9 @@ function acquire_lock() {
 
   exec {LOCKFD}>${LOCKFILE}
   /usr/bin/flock -x ${LOCKFD}
-  trap "/usr/bin/flock -u ${LOCKFD}" EXIT
+  trap cleanup EXIT
 
   logger -t $LOG_TAG "Acquired ${LOCKFILE}"
-}
-
-function release_lock() {
-  /usr/bin/flock -u ${LOCKFD}
-  logger -t $LOG_TAG "Released ${LOCKFILE}"
 }
 
 function enable_phy() {
@@ -175,6 +177,9 @@ check_fan_status
 
 acquire_lock
 
+# The ASIC is down from here until cleanup runs.
+LOG_TAG="$LOG_TAG" nh_asic_powercycle --begin
+
 # Per HW, do this right before taking the ASIC out of reset.
 clear_sticky_bits
 
@@ -197,7 +202,5 @@ sleep 0.2
 fpga write32 "$FPGA_BDF" 0x8 0x1 --bits "10:10"
 
 enable_phy
-
-release_lock
 
 exit 0
