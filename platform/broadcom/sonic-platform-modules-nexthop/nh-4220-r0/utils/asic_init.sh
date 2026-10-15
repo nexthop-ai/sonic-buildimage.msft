@@ -35,6 +35,13 @@ fpga_write() {
   fi
 }
 
+function cleanup() {
+  # --end before the unlock, or a queued run's rows get deleted by ours.
+  nh_asic_powercycle --end
+  /usr/bin/flock -u ${LOCKFD}
+  logger -t $LOG_TAG -p $LOG_PRIO "Released ${LOCKFILE}"
+}
+
 function acquire_lock() {
   if [[ ! -f $LOCKFILE ]]; then
     touch $LOCKFILE
@@ -44,14 +51,9 @@ function acquire_lock() {
 
   exec {LOCKFD}>${LOCKFILE}
   /usr/bin/flock -x ${LOCKFD}
-  trap "/usr/bin/flock -u ${LOCKFD}" EXIT
+  trap cleanup EXIT
 
   logger -t $LOG_TAG -p $LOG_PRIO "Acquired ${LOCKFILE}"
-}
-
-function release_lock() {
-  /usr/bin/flock -u ${LOCKFD}
-  logger -t $LOG_TAG -p $LOG_PRIO "Released ${LOCKFILE}"
 }
 
 function clear_sticky_bits() {
@@ -97,7 +99,6 @@ function clear_sticky_bits() {
 
 if [ -f /disable_asic ]; then
   logger -p user.warning -t $LOG_TAG "ASIC init disabled due to /disable_asic file"
-  release_lock
   exit 0
 fi
 
@@ -108,6 +109,8 @@ if [ "$IS_OPENNSL_INITIALLY_LOADED" -eq 0 ]; then
   /etc/init.d/opennsl-modules stop
 fi
 
+# The ASIC is down from here until cleanup runs.
+LOG_TAG="$LOG_TAG" nh_asic_powercycle --begin --xcvr-cache
 
 # Try power cycling, up to two times, or until Switch ASIC chip is found
 for attempt in {0..2}; do
@@ -152,14 +155,11 @@ for attempt in {0..2}; do
       logger -t $LOG_TAG -p $LOG_PRIO "Inserting ASIC modules done: $(lsmod | grep linux_ngbde)"
     fi
 
-    release_lock
     exit 0
   fi
 done
 
 logger -t $LOG_TAG -p $LOG_ERR "Switch ASIC not found after power cycle attempt $attempt, giving up, powering it down."
 fpga_write 0x8 0x1 "3:3"
-
-release_lock
 
 exit 1
