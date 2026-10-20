@@ -1107,7 +1107,15 @@
 
   "MULTIFPGAPCIE1": {
     "dev_info": {"device_type": "MULTIFPGAPCIE", "device_name": "SWITCHCARD_FPGA", "device_parent": "PCIE0", "device_bdf": "{{switchcard_fpga_bdf}}", "dev_attr": {}},
-    "dev_attr": {"pwr_cycle_reg_offset": "0x4", "pwr_cycle_enable_word": "0xdeadbeef"},
+    "dev_attr": {"pwr_cycle_reg_offset": "0x4", "pwr_cycle_enable_word": "0xdeadbeef", "check_fpga_version_cmd": "fpga read32 {{switchcard_fpga_bdf}} 0x0 --bits=0:7", "reg_width": 32},
+    "use_msi": {% if SWITCHCARD_FPGA_MEETS_MIN_VERSION_0x07 %}{
+      "num_msi_vectors": 3,
+      "msi_domains": [
+        {"msi_vector_num": 0, "irq_chip_name": "blkt-msi-0", "irq_line_mask": "00001f11", "interrupt_enable_reg": "170", "interrupt_status_reg": "174"},
+        {"msi_vector_num": 1, "irq_chip_name": "blkt-msi-1", "irq_line_mask": "ffffffff", "interrupt_enable_reg": "178", "interrupt_status_reg": "17C"},
+        {"msi_vector_num": 2, "irq_chip_name": "blkt-msi-2", "irq_line_mask": "ffffffff", "interrupt_enable_reg": "180", "interrupt_status_reg": "184"}
+      ]
+    }{% else %}{}{% endif %},
     "i2c": {
       "dev_attr": {"virt_bus": "0x13", "ch_base_offset": "0x40000", "ch_size": "0x200", "num_virt_ch": "0x45"},
       "channel": [
@@ -4884,6 +4892,10 @@
   },
   "WATCHDOG": {
     "dev_info": {"device_type": "WATCHDOG", "device_parent": "MULTIFPGAPCIE1"},
-     "dev_attr": {"event_driven_power_cycle_control_reg_offset": "0x28", "watchdog_counter_reg_offset": "0x1E0"}
+     "dev_attr": {"event_driven_power_cycle_control_reg_offset": "0x28", "watchdog_counter_reg_offset": "0x1E0", "event_driven_power_cycle_control_bit": 4, "use_watchdog_msi": {% if SWITCHCARD_FPGA_MEETS_MIN_VERSION_0x07 %}{
+       "msi_domain": 0,
+       "hw_irq": 0,
+       "watchdog_counter_msi_reg": "0x1D8"
+     }{% else %}{}{% endif %}}
   }
 }
