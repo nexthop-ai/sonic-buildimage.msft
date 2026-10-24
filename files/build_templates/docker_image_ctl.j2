@@ -133,10 +133,10 @@ function preStartAction()
     fi
 {%- elif docker_container_name == "dhcp_server" %}
     # dhcp_server is the only bridge-mode container. caclmgrd's catch-all DROP
-    # on the INPUT chain blocks its syslog (UDP 514) to host rsyslog.
+    # on the INPUT chain blocks its syslog (RELP, TCP 2514) to host rsyslog.
     # Restrict to docker0 interface to minimize security impact.
-    iptables -C INPUT -i docker0 -p udp --dport 514 -j ACCEPT -m comment --comment "dhcp_server_syslog" 2>/dev/null || \
-        iptables -I INPUT -i docker0 -p udp --dport 514 -j ACCEPT -m comment --comment "dhcp_server_syslog"
+    iptables -C INPUT -i docker0 -p tcp --dport 2514 -j ACCEPT -m comment --comment "dhcp_server_syslog" 2>/dev/null || \
+        iptables -I INPUT -i docker0 -p tcp --dport 2514 -j ACCEPT -m comment --comment "dhcp_server_syslog"
 {%- else %}
     : # nothing
 {%- endif %}
@@ -855,7 +855,7 @@ stop() {
     fi
 {%- if docker_container_name == "dhcp_server" %}
     # Remove syslog iptables exception added during start
-    iptables -D INPUT -i docker0 -p udp --dport 514 -j ACCEPT -m comment --comment "dhcp_server_syslog" 2>/dev/null || true
+    iptables -D INPUT -i docker0 -p tcp --dport 2514 -j ACCEPT -m comment --comment "dhcp_server_syslog" 2>/dev/null || true
 {%- endif %}
     {%- endif %}
 }
