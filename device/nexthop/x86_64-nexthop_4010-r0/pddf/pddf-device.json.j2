@@ -1392,8 +1392,36 @@
     },
     "dev_attr": {
       "pwr_cycle_reg_offset": "0x4",
-      "pwr_cycle_enable_word": "0xdeadbeef"
+      "pwr_cycle_enable_word": "0xdeadbeef",
+      "check_fpga_version_cmd": "fpga read32 {{switchcard_fpga_bdf}} --bits=0:7 0x0",
+      "reg_width": 32
     },
+    "use_msi": {% if SWITCHCARD_FPGA_MEETS_MIN_VERSION_0x8e %}{
+      "num_msi_vectors": 3,
+      "msi_domains": [
+        {
+          "msi_vector_num": 0,
+          "irq_chip_name": "ge-msi-0",
+          "irq_line_mask": "00000f11",
+          "interrupt_enable_reg": "170",
+          "interrupt_status_reg": "174"
+        },
+        {
+          "msi_vector_num": 1,
+          "irq_chip_name": "ge-msi-1",
+          "irq_line_mask": "ffffffff",
+          "interrupt_enable_reg": "178",
+          "interrupt_status_reg": "17C"
+        },
+        {
+          "msi_vector_num": 2,
+          "irq_chip_name": "ge-msi-2",
+          "irq_line_mask": "ffffffff",
+          "interrupt_enable_reg": "180",
+          "interrupt_status_reg": "184"
+        }
+      ]
+    }{% else %}{}{% endif %},
     "i2c": {
       "dev_attr": {
         "virt_bus": "0x13",
@@ -13221,7 +13249,13 @@
      },
      "dev_attr": {
        "event_driven_power_cycle_control_reg_offset": "0x28",
-       "watchdog_counter_reg_offset": "0x1E0"
+       "event_driven_power_cycle_control_bit": 4,
+       "watchdog_counter_reg_offset": "0x1E0",
+       "use_watchdog_msi": {% if SWITCHCARD_FPGA_MEETS_MIN_VERSION_0x8e %}{
+         "msi_domain": 0,
+         "hw_irq": 0,
+         "watchdog_counter_msi_reg": "0x1D8"
+       }{% else %}{}{% endif %}
      }
   }
 }
