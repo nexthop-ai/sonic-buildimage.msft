@@ -39,7 +39,7 @@ module sonic-events-swss {
 
             leaf ifname {
                 type string {
-                    pattern 'Ethernet[0-9]{1,3}';
+                    pattern 'Ethernet[0-9]+';
                 }
                 description "Interface name";
             }
@@ -61,7 +61,7 @@ module sonic-events-swss {
 
             leaf ifname {
                 type string {
-                    pattern 'Ethernet[0-9]{1,2}';
+                    pattern 'Ethernet[0-9]+';
                 }
                 description "Interface name";
             }
