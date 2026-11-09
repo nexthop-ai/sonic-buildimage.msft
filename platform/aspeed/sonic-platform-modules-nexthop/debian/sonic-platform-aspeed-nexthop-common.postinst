@@ -36,6 +36,17 @@ case "$1" in
         # (ordered before sonic.target)
         echo "Enabling cpe_ctrl cold-boot init service..."
         systemctl enable cpe-ctrl-init.service 2>/dev/null || true
+        # The unit is not started this boot, so arm reset tolerance now without
+        # changing the level; otherwise the first BMC reset drops the host CPU.
+        /usr/local/bin/gpio-cold-init.sh --preserve cpe_ctrl 0x14C0B208 0 || true
+
+        # U-Boot halts autoboot after too many consecutive WDT resets (every
+        # AST2700 reboot is one); clear its counter once each boot succeeds.
+        # This postinst runs from rc-local, which multi-user.target waits on,
+        # and the unit is After=multi-user.target, so only queue the start.
+        echo "Enabling reboot-storm guard clear service..."
+        systemctl enable storm-guard-clear.service 2>/dev/null || true
+        systemctl start --no-block storm-guard-clear.service 2>/dev/null || true
         ;;
 esac
 

@@ -27,12 +27,23 @@
 # cpe_ctrl is GPIOE2, offset 34 on gpio1 (0x14c0b000), giving
 # 0x14c0b000 + 0x180 + 34 * 4 = 0x14c0b208.
 #
-# Usage: gpio-cold-init.sh <gpio-line-name> <ctrl-reg> <cold-boot-value>
+# With --preserve the current level is always kept (only reset tolerance and the
+# GPIO mux are armed). The package postinst uses this on the first boot after
+# install: the unit is only enabled then, and applying the cold-boot default
+# would cut power to a host that is already running.
+#
+# Usage: gpio-cold-init.sh [--preserve] <gpio-line-name> <ctrl-reg> <cold-boot-value>
 
 set -u
 
+PRESERVE=0
+if [ "${1:-}" = "--preserve" ]; then
+    PRESERVE=1
+    shift
+fi
+
 if [ $# -ne 3 ]; then
-    echo "usage: $(basename "$0") <gpio-line-name> <ctrl-reg> <cold-boot-value>" >&2
+    echo "usage: $(basename "$0") [--preserve] <gpio-line-name> <ctrl-reg> <cold-boot-value>" >&2
     exit 1
 fi
 
@@ -63,17 +74,28 @@ if ! before=$(busybox devmem "${CTRL_REG}" 32); then
     exit 1
 fi
 
-# The line is addressed by its device-tree gpio-line-names entry, so a DTB that
-# predates those names exposes nothing to request. That DTB also predates the
-# gpio-hog this script replaces, so the pin is left exactly as the boot loader
-# configured it -- the behaviour from before this script existed. Skip rather
-# than fail the unit on that kernel/userspace skew.
+# The line is addressed by its device-tree gpio-line-names entry when the DTB
+# names it. A DTB without those names still exposes the line, so fall back to
+# the controller (named <base>.gpio) and the offset encoded in the control
+# register address. Either way gpioset goes through the same gpiolib request
+# below, so the mux and reset tolerance are armed identically.
+chip=""
+line_id="${LINE}"
 if ! gpioinfo "${LINE}" >/dev/null 2>&1; then
-    log "no GPIO line named ${LINE} in this kernel; skipping, ${CTRL_REG}=${before}"
-    exit 0
+    chip=$(printf '%x.gpio' $(( CTRL_REG & ~0xfff )))
+    offset=$(( ((CTRL_REG & 0xfff) - 0x180) / 4 ))
+    if ! gpioinfo -c "${chip}" "${offset}" >/dev/null 2>&1; then
+        log "no GPIO line named ${LINE} and no ${chip} line ${offset}; skipping, ${CTRL_REG}=${before}"
+        exit 0
+    fi
+    line_id=${offset}
+    log "no GPIO line named ${LINE}; using ${chip} line ${offset}"
 fi
 
-if ! wdt_reset; then
+if [ "${PRESERVE}" -eq 1 ]; then
+    value=$(( before & CTRL_DATA ))
+    log "preserving current level ${value}, ${CTRL_REG}=${before}"
+elif ! wdt_reset; then
     value=${COLD_VALUE}
     log "cold boot (no WDT reset): applying default ${value}, ${CTRL_REG}=${before}"
 elif [ $(( before & CTRL_TOLERANT_OUT )) -ne "${CTRL_TOLERANT_OUT}" ]; then
@@ -97,8 +119,8 @@ fi
 # holds the request open until it is killed. Without it this script blocks
 # forever and cpe-ctrl-init.service is stuck in "activating", which wedges
 # every unit ordered after it.
-if ! gpioset --strict --toggle 0 --consumer gpio-cold-init "${LINE}=${value}"; then
-    log "gpioset failed for ${LINE}=${value}"
+if ! gpioset --strict --toggle 0 --consumer gpio-cold-init ${chip:+-c "${chip}"} "${line_id}=${value}"; then
+    log "gpioset failed for ${line_id}=${value}"
     exit 1
 fi
 
