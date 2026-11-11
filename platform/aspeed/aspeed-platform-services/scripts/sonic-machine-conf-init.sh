@@ -35,7 +35,7 @@ if [ ! -f "$DT_BASE/compatible" ]; then
 fi
 
 COMPATIBLE=$(tr '\0' ' ' < "$DT_BASE/compatible")
-MODEL=$(tr -d '\0' < "$DT_BASE/model" 2>/dev/null || echo "")
+MODEL=$(tr -d '\0' 2>/dev/null < "$DT_BASE/model" || echo "")
 log "Detected compatible: $COMPATIBLE, model: $MODEL"
 
 PLATFORM=""
@@ -73,6 +73,7 @@ log "Creating $MACHINE_CONF for platform: $PLATFORM"
 
 # Write via a temp file so a power loss never leaves a partial machine.conf.
 TMP_CONF="$MACHINE_CONF.tmp.$$"
+trap 'rm -f "$TMP_CONF"' EXIT
 cat > "$TMP_CONF" << EOF
 onie_platform=$PLATFORM
 onie_machine=$MACHINE
